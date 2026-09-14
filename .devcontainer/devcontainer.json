@@ -1,0 +1,7 @@
+{
+  "name": "sahil.co.uk",
+  "image": "mcr.microsoft.com/playwright:v1.49.1-noble",
+  "forwardPorts": [8088],
+  "postCreateCommand": "npm install -g playwright@1.49.1",
+  "postStartCommand": "npx --yes serve -l 8088 ."
+}
