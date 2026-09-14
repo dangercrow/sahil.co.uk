@@ -115,19 +115,6 @@ a {
   color: var(--muted);
 }
 
-.project-footer {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--accent);
-  font-weight: 600;
-  margin-top: var(--space-2);
-}
-
-.project-footer svg {
-  flex-shrink: 0;
-}
-
 .stretched-link {
   position: absolute;
   inset: 0;
