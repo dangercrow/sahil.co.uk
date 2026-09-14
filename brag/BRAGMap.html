@@ -5,17 +5,97 @@
   <title>BRAG Allotment Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { margin: 0; padding: 1rem; font-family: system-ui, sans-serif; background: #f5f5f5; }
-    .map-container { position: relative; background: #fff; border: 1px solid #ccc; overflow: auto; }
-    .map-container svg { width: 100%; height: auto; display: block; }
+    :root {
+      --page-bg: #0b1020;
+      --surface: #111827;
+      --border: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 16px;
+      --space-4: 24px;
+      --space-6: 48px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: var(--space-4) var(--space-3);
+      gap: var(--space-4);
+    }
+
+    .page-header {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .page-header h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 32px);
+      letter-spacing: -0.02em;
+    }
+
+    .page-header p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 720px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .map-container {
+      position: relative;
+      overflow: auto;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* The source artwork is black line art on transparent fill; invert it
+       so it reads as light lines against the site's dark surface. Scaled to
+       fill the available panel space while keeping its aspect ratio. */
+    .map-container svg {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      display: block;
+      filter: invert(1);
+    }
 
     .tooltip {
       position: absolute;
-      padding: 0.3rem 0.5rem;
-      background: rgba(0,0,0,0.8);
-      color: #fff;
+      padding: var(--space-1) var(--space-2);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
       font-size: 0.85rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       pointer-events: none;
       white-space: nowrap;
       display: none;
@@ -24,9 +104,18 @@
   </style>
 </head>
 <body>
-  <h1>BRAG Allotment Map</h1>
-  <div class="map-container" id="mapContainer"></div>
-  <div class="tooltip" id="tooltip"></div>
+  <main class="page">
+    <header class="page-header">
+      <h1>BRAG Allotment Map</h1>
+      <p>Hover a plot to see its label.</p>
+    </header>
+
+    <section class="panel">
+      <div class="map-container" id="mapContainer"></div>
+    </section>
+
+    <div class="tooltip" id="tooltip"></div>
+  </main>
 
   <script>
     // --- Parse straight-edge SVG path (M/m, L/l, H/h, V/v, Z/z) into absolute points ---
