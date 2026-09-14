@@ -8,33 +8,43 @@
   <script src="app.js"></script>
 </head>
 <body>
-  <h1>Optimal Distribution (calculus simplified)</h1>
+  <main class="page">
+    <header class="page-header">
+      <h1>Optimal Allocation (calculus simplified)</h1>
+      <p>Computes the integer split of speed/damage points that maximises F(x,N).</p>
+    </header>
 
-  <p>
-    Note: This calculator was created for Upload, Inc. v1.0 and may be outdated for 2.0.
-    It is based on the community guide at
-    <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3617188783">https://steamcommunity.com/sharedfiles/filedetails/?id=3617188783</a>.
-  </p>
+    <section class="panel">
+      <div class="field-label">
+        <label for="N">Total points (N &gt; 0)</label>
+        <input id="N" class="field-input" type="number" min="1" step="1" value="10" />
+      </div>
 
-  <div class="row">
-    <label for="N">Total points (N &gt; 0):</label>
-    <input id="N" type="number" min="1" step="1" value="10" />
-  </div>
+      <div id="out" class="mono"></div>
+    </section>
 
-  <div id="out"></div>
+    <section class="panel">
+      <h2 class="panel-title">Next optimal allocations</h2>
+      <div class="table-wrap">
+        <table id="tbl" aria-label="Optimal allocations table">
+          <thead>
+            <tr>
+              <th>N</th>
+              <th>Speed (x)</th>
+              <th>Damage (y)</th>
+              <th>F(x,N)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-  <h2 class="section-title">Next optimal allocations</h2>
-  <table id="tbl" aria-label="Optimal allocations table">
-    <thead>
-      <tr>
-        <th>N</th>
-        <th>Speed (x)</th>
-        <th>Damage (y)</th>
-        <th>F(x,N)</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-
+    <p class="note">
+      This calculator was created for Upload, Inc. v1.0 and may be outdated for 2.0.
+      It is based on the community guide at
+      <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3617188783">https://steamcommunity.com/sharedfiles/filedetails/?id=3617188783</a>.
+    </p>
+  </main>
 </body>
 </html>
