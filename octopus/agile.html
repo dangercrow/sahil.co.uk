@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Octopus Agile Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { color: #eee; font-family: sans-serif; }
+html, body { background-color: #000; margin: 0; padding: 0; }
+.price-table { margin: auto; border-spacing: 2px; }
+.price-table td { padding: 2px 4px; }
+h1, h2 { text-align: left; margin-left: 35px; }
+h2 > small { color: #aaa; }
+.dec_price { font-size: .7em; }
+td.hour { text-align: right; padding-left: 10px; color: #ddd; }
+td.price { width: 40px; text-align: center; }
+td.pred {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(0,0,0,.45) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,.45) 0 1px, transparent 1px 5px);
+}
+td.current { font-weight: bold; box-shadow: 0px 0px 3px #eee; color: #fff; text-shadow: #fff 0px 0px 2px; }
+td.current_hour { font-weight: bold; color: #eee; text-shadow: #fff 0px 0px 2px; }
+.container { display: flex; justify-content: center; flex-flow: row wrap; column-gap: 20px; padding-bottom: 20px; }
+div.today > h2, div.today > h2 > small { color: #fff; text-shadow: #fff 0px 0px 4px; }
+</style>
+</head>
+<body>
+<div class="container" id="container"></div>
+<script>
+const HALF_HOUR = 30 * 60 * 1000;
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// ---- Query string: ?region=A&past=7&future=7[&product=AGILE-23-12-06] ----
+const params = new URLSearchParams(window.location.search);
+
+let region = (params.get("region") || "").toUpperCase();
+if (!/^[A-HJ-P]$/.test(region)) region = "A";
+
+function intParam(name, dflt, max) {
+  const n = parseInt(params.get(name), 10);
+  return Number.isFinite(n) ? Math.min(Math.max(n, 0), max) : dflt;
+}
+const past = intParam("past", 0, 60);
+const future = intParam("future", 1, 13);
+
+// ?reverse=true puts the latest day first; default is chronological (oldest first).
+// A bare ?reverse counts as true.
+const rv = params.get("reverse");
+const reverse = rv !== null && !["false", "0", "no", "off"].includes(rv.toLowerCase());
+
+let product = params.get("product") || "AGILE-23-12-06";
+if (!/^AGILE-[0-9-]+$/.test(product)) product = "AGILE-23-12-06";
+const tariff = `E-1R-${product}-${region}`;
+
+// Make the defaults visible in the address bar without adding a history entry.
+params.set("region", region);
+params.set("past", past);
+params.set("future", future);
+params.set("reverse", reverse);
+try { history.replaceState(null, "", "?" + params.toString()); } catch (e) { /* e.g. file:// restrictions */ }
+
+// ---- Data ----
+async function fetchOctopus(url) {
+  const out = [];
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Octopus API returned ${res.status}`);
+    const data = await res.json();
+    out.push(...(data.results || []));
+    url = data.next;
+  }
+  return out;
+}
+
+async function fetchForecast() {
+  const res = await fetch(`https://agilepredict.com/api/${region}?days=${future + 1}`);
+  if (!res.ok) throw new Error(`AgilePredict returned ${res.status}`);
+  return (await res.json())[0].prices;
+}
+
+function get_price_bg_color(price) {
+  if (price < 0) return "rgba(104, 0, 233, .9)";
+  const p = Math.min(price, 40);
+  const r = p / 40 * 255;
+  const g = (28 - Math.min(p, 28)) / 40 * 180;
+  return `rgba(${r}, ${g}, 0, .9)`;
+}
+
+function dayTitle(dayStart, today) {
+  const diff = Math.round((dayStart - today) / 864e5);
+  const name = diff === 0 ? "Today" : diff === -1 ? "Yesterday" : diff === 1 ? "Tomorrow" : DAYS[dayStart.getDay()];
+  const y = dayStart.getFullYear();
+  const m = String(dayStart.getMonth() + 1).padStart(2, "0");
+  const d = String(dayStart.getDate()).padStart(2, "0");
+  return [name, `${y}-${m}-${d}`, diff === 0];
+}
+
+function draw_day(container, dayStart, nextDay, slots, today, now) {
+  // All half-hour slots in this local day (46–50 on clock-change days).
+  const times = [];
+  for (let t = dayStart.getTime(); t < nextDay.getTime(); t += HALF_HOUR) times.push(t);
+  const half = Math.ceil(times.length / 4) * 2;
+
+  const table = document.createElement("table");
+  table.classList.add("price-table");
+
+  for (let i = 0; i < half / 2; i++) {
+    const tr = document.createElement("tr");
+    for (const k of [i * 2, i * 2 + 1, half + i * 2, half + i * 2 + 1]) {
+      const t = times[k];
+      const slot = t === undefined ? undefined : slots.get(t);
+
+      if (k % 2 === 0) {
+        const th = document.createElement("td");
+        th.classList.add("hour");
+        if (t !== undefined) {
+          th.textContent = new Date(t).getHours();
+          if (t <= now && now < t + 2 * HALF_HOUR) th.classList.add("current_hour");
+        }
+        tr.appendChild(th);
+      }
+
+      const td = document.createElement("td");
+      if (slot) {
+        const [int_price, dec_price] = slot.price.toFixed(2).split(".");
+        const i_span = document.createElement("span");
+        const d_span = document.createElement("span");
+        i_span.textContent = int_price;
+        d_span.textContent = "." + dec_price;
+        d_span.classList.add("dec_price");
+        td.append(i_span, d_span);
+        td.style.backgroundColor = get_price_bg_color(slot.price);
+        td.classList.add("price");
+        if (slot.pred) {
+          td.classList.add("pred");
+          td.title = `Forecast ${slot.low.toFixed(2)} to ${slot.high.toFixed(2)} p/kWh`;
+        }
+        if (t <= now && now < t + HALF_HOUR) td.classList.add("current");
+      } else {
+        td.textContent = "-";
+        td.style.textAlign = "center";
+      }
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+
+  const [name, date, isToday] = dayTitle(dayStart, today);
+  const h2 = document.createElement("h2");
+  const small = document.createElement("small");
+  h2.textContent = name + " ";
+  small.textContent = date;
+  h2.appendChild(small);
+
+  const div = document.createElement("div");
+  if (isToday) div.classList.add("today");
+  div.append(h2, table);
+  container.appendChild(div);
+}
+
+async function main() {
+  const now = Date.now();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - past);
+  const end = new Date(today); end.setDate(end.getDate() + future + 1);
+
+
+  const octUrl = `https://api.octopus.energy/v1/products/${product}/electricity-tariffs/${tariff}/standard-unit-rates/` +
+    `?period_from=${start.toISOString()}&period_to=${end.toISOString()}&page_size=1500`;
+
+  const [act, fc] = await Promise.allSettled([fetchOctopus(octUrl), fetchForecast()]);
+  const slots = new Map();
+  const problems = [];
+
+  if (fc.status === "fulfilled") {
+    for (const p of fc.value) {
+      slots.set(new Date(p.date_time).getTime(), { price: p.agile_pred, low: p.agile_low, high: p.agile_high, pred: true });
+    }
+  } else problems.push("Forecast unavailable: " + fc.reason.message);
+
+  // Confirmed prices replace forecast wherever both exist.
+  if (act.status === "fulfilled") {
+    for (const r of act.value) slots.set(new Date(r.valid_from).getTime(), { price: r.value_inc_vat, pred: false });
+  } else problems.push("Confirmed prices unavailable: " + act.reason.message);
+
+  problems.forEach(msg => console.error(msg));
+
+  const container = document.getElementById("container");
+  const days = [];
+  for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+  if (reverse) days.reverse();
+  for (const dayStart of days) {
+    const nextDay = new Date(dayStart); nextDay.setDate(nextDay.getDate() + 1);
+    draw_day(container, dayStart, nextDay, slots, today, now);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", main);
+</script>
+</body>
+</html>
