@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mic</title>
+<style>
+:root{--bg:#f6f6f3;--fg:#1d1d1b;--muted:#6b6b66;--line:#dcdcd6;--accent:#2f6fed;--ok:#2e9d5b;--warn:#c47a10;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#9a9a95;--line:#333338;--accent:#6c9bff;--ok:#4cc17f;--warn:#e0a040;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,sans-serif}
+main{max-width:480px;margin:0 auto;padding:24px 16px;display:grid;gap:16px}
+select,button{width:100%;padding:14px;border-radius:12px;font-size:1rem;box-sizing:border-box}
+select{border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+input[type=range]{width:100%}
+button{border:0;background:var(--accent);color:#fff;font-weight:600}
+button.stop{background:#d04545}
+.meter{height:16px;border-radius:8px;border:1px solid var(--line);overflow:hidden}
+.bar{height:100%;width:0;background:var(--ok);transition:width .06s linear}
+small{color:var(--muted)}
+#warn{color:var(--warn);display:none}
+</style>
+</head>
+<body>
+<main>
+<select id="mic" aria-label="Microphone"><option value="">Default mic</option></select>
+<label><small>Boost <span id="gv"></span>×</small>
+<input id="gain" type="range" min="0.5" max="6" step="0.1" value="1.5"></label>
+<button id="go">Start</button>
+<div class="meter"><div class="bar" id="bar"></div></div>
+<small id="status">Stopped</small>
+<small id="active"></small>
+<small id="dbg"></small>
+<small id="warn">This looks like a headset mic. Pick the phone’s own mic above for better quality.</small>
+</main>
+<audio id="keep"></audio>
+<script>
+const $ = id => document.getElementById(id);
+let ctx, stream, gainNode, analyser, raf, lock, running = false, muted = false, silent;
+
+async function listMics(keep) {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+  const sel = $("mic"), want = keep ?? sel.value;
+  sel.innerHTML = '<option value="">Default mic</option>';
+  devs.forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId;
+    o.textContent = d.label || "Mic " + (i + 1);
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
+}
+
+async function wake() {
+  try { lock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+
+const BUILD = "media-v3";
+function dbg(msg) { $("dbg").textContent = BUILD + " | " + msg; }
+dbg("loaded");
+
+function bump(d) {
+  const g = $("gain");
+  g.value = Math.min(6, Math.max(0.5, +g.value + d));
+  g.dispatchEvent(new Event("input"));
+}
+
+function toggleMute() {
+  muted = !muted;
+  gainNode.gain.value = muted ? 0 : parseFloat($("gain").value);
+  $("status").textContent = muted ? "Muted" : "Live (audio " + ctx.state + ")";
+}
+
+function setupMedia() {
+  // Faint silent stream into an <audio> element so the page counts as a media player
+  const dest = ctx.createMediaStreamDestination();
+  silent = ctx.createConstantSource();
+  const quiet = ctx.createGain();
+  quiet.gain.value = 0.0005;
+  silent.connect(quiet).connect(dest);
+  silent.start();
+  $("keep").srcObject = dest.stream;
+  $("keep").play().then(
+    () => dbg("session " + ("mediaSession" in navigator ? "yes" : "NO") + ", keep-audio playing"),
+    e => dbg("keep-audio blocked: " + e.name));
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({ title: "Mic", artist: "Live" });
+  navigator.mediaSession.playbackState = "playing";
+  const set = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
+  set("play", () => { dbg("button: play"); toggleMute(); });
+  set("pause", () => { dbg("button: pause"); toggleMute(); });
+  set("nexttrack", () => { dbg("button: next"); bump(0.5); });
+  set("previoustrack", () => { dbg("button: previous"); bump(-0.5); });
+}
+
+function meter() {
+  const buf = new Uint8Array(analyser.fftSize);
+  (function tick() {
+    analyser.getByteTimeDomainData(buf);
+    let s = 0;
+    for (const v of buf) { const x = (v - 128) / 128; s += x * x; }
+    $("bar").style.width = Math.min(100, Math.sqrt(s / buf.length) * 400) + "%";
+    raf = requestAnimationFrame(tick);
+  })();
+}
+
+async function start() {
+  if (!navigator.mediaDevices?.getUserMedia) { $("status").textContent = "No mic API (needs HTTPS)"; return; }
+  ctx = new AudioContext({ latencyHint: "interactive" });
+  ctx.resume();
+  try {
+    const id = $("mic").value;
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: id ? { exact: id } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+    });
+  } catch (e) {
+    $("status").textContent = "Mic error: " + e.name + (e.message ? " (" + e.message + ")" : "");
+    ctx.close();
+    return;
+  }
+  const track = stream.getAudioTracks()[0];
+  await listMics(track.getSettings().deviceId);
+  $("active").textContent = "In use: " + (track.label || "unknown");
+  $("warn").style.display = /bluetooth|headset|hands.?free|buds|airpods/i.test(track.label) ? "block" : "none";
+  await ctx.resume();
+  const src = ctx.createMediaStreamSource(stream);
+  gainNode = ctx.createGain();
+  gainNode.gain.value = parseFloat($("gain").value);
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  src.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  gainNode.connect(analyser);
+  muted = false;
+  meter();
+  wake();
+  setupMedia();
+  running = true;
+  $("status").textContent = "Live (audio " + ctx.state + ")";
+  $("go").textContent = "Stop";
+  $("go").className = "stop";
+}
+
+function stop() {
+  running = false;
+  cancelAnimationFrame(raf);
+  stream && stream.getTracks().forEach(t => t.stop());
+  try { silent && silent.stop(); } catch (e) {}
+  $("keep").srcObject = null;
+  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
+  ctx && ctx.close();
+  lock && lock.release().catch(() => {});
+  $("bar").style.width = "0";
+  $("status").textContent = "Stopped";
+  $("go").textContent = "Start";
+  $("go").className = "";
+}
+
+$("go").onclick = () => running ? stop() : start();
+$("gain").oninput = e => {
+  $("gv").textContent = parseFloat(e.target.value).toFixed(1);
+  if (gainNode) gainNode.gain.value = parseFloat(e.target.value);
+};
+$("mic").onchange = async () => { if (running) { stop(); await start(); } };
+document.addEventListener("visibilitychange", () => {
+  if (running && document.visibilityState === "visible") {
+    wake();
+    if (ctx.state === "suspended") ctx.resume();
+  }
+});
+$("gv").textContent = parseFloat($("gain").value).toFixed(1);
+</script>
+</body>
+</html>
